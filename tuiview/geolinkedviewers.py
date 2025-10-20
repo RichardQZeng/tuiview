@@ -134,6 +134,7 @@ class GeolinkedViewers(QObject):
         """
         newviewer = viewerwindow.ViewerWindow()
         newviewer.show()
+        newviewer.showMaximized()
 
         # connect signals
         self.connectSignals(newviewer)
