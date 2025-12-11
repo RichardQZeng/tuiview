@@ -25,11 +25,15 @@ class BERAToolExecutor:
         """
         # Try to find BERATools in installed package first
         try:
-            import beratools
             from pathlib import Path as _Path
+
+            import beratools
+
             beratools_dir = _Path(beratools.__file__).parent
             if (beratools_dir / "tools").exists():
-                print(f"[BERATools] Found BERATools at {beratools_dir} (installed package)")
+                print(
+                    f"[BERATools] Found BERATools at {beratools_dir} (installed package)"
+                )
                 return beratools_dir
         except Exception as e:
             print(f"[BERATools] Error loading installed package: {e}")
@@ -92,10 +96,14 @@ class BERAToolExecutor:
         program = "python"
         args = [
             str(tool_script),
-            "-i", args_json,
-            "-p", str(self.cpu_cores),
-            "-c", "GUI",
-            "-l", "INFO"
+            "-i",
+            args_json,
+            "-p",
+            str(self.cpu_cores),
+            "-c",
+            "GUI",
+            "-l",
+            "INFO",
         ]
 
         print(f"[BERATools] Built command: {program} {args}")
@@ -111,14 +119,18 @@ class BERAToolExecutor:
         """
         self.cpu_cores = cores
 
+
 def name():
     return "BERATools Executor"
+
 
 def author():
     return "BERATools Team"
 
+
 def description():
     return "Handles building and running BERATool commands."
+
 
 def action(actioncode, param):
     # This plugin does not implement actions

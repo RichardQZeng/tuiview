@@ -29,12 +29,14 @@ class BERAToolsManager:
         """
         # Try to load beratools.json from installed beratools package first
         try:
-            import beratools
             from pathlib import Path as _Path
+
+            import beratools
+
             beratools_dir = _Path(beratools.__file__).parent
             json_path = beratools_dir / "gui" / "assets" / "beratools.json"
             if json_path.exists():
-                with open(json_path, 'r') as f:
+                with open(json_path, "r") as f:
                     self.tools_metadata = json.load(f)
                 print(f"[BERATools] Loaded metadata from {json_path}")
                 self._parse_metadata()
@@ -115,14 +117,18 @@ class BERAToolsManager:
             result[category] = tools
         return result
 
+
 def name():
     return "BERATools Data"
+
 
 def author():
     return "BERATools Team"
 
+
 def description():
     return "BERATools metadata loader and manager."
+
 
 def action(actioncode, param):
     # This plugin does not implement actions
