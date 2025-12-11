@@ -105,6 +105,8 @@ class PluginManager:
         Attempt to load all the files in the given 
         directory that match the Python suffix 
         """
+        with open("pluginmanager_debug.log", "a") as f:
+            f.write(f"[DEBUG] Scanning plugins directory: {directory}\n")
         for fname in os.listdir(directory):
             for suffix in importlib.machinery.SOURCE_SUFFIXES:
                 if fname.endswith(suffix) and not fname.startswith('__'):
@@ -145,4 +147,3 @@ class PluginManager:
         except ImportError as e:
             print('Unable to import %s' % path)
             print(str(e))
-
