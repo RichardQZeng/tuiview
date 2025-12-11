@@ -16,6 +16,19 @@ All widgets implement:
 from abc import abstractmethod
 from pathlib import Path
 
+def name():
+    return "BERATools Widgets"
+
+def author():
+    return "BERATools Team"
+
+def description():
+    return "Reusable parameter widgets for BERATools plugin."
+
+def action(actioncode, param):
+    # This plugin does not implement actions
+    pass
+
 from PySide6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QLabel, QLineEdit, QSpinBox,
     QDoubleSpinBox, QPushButton, QComboBox, QFileDialog, QMessageBox
