@@ -15,6 +15,26 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, Signal, QProcess, Slot, QTimer
 
+# Ensure plugins directory is in sys.path for imports
+import sys
+import os
+import pathlib
+plugin_dir = pathlib.Path(__file__).parent
+if str(plugin_dir) not in sys.path:
+    sys.path.insert(0, str(plugin_dir))
+
+def name():
+    return "BERATools Panel"
+
+def author():
+    return "BERATools Team"
+
+def description():
+    return "Main BERATools dock panel for tool selection and execution."
+
+def action(actioncode, param):
+    print(f"[BERATools Panel] Action called with code: {actioncode}, param: {param}")
+
 # Import data manager, widgets, and executor
 try:
     # When imported as part of package

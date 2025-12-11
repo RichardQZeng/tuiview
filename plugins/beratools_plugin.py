@@ -14,10 +14,13 @@ from PySide6.QtCore import Qt, QTimer
 # Import dock panel classes
 try:
     from .beratools_panel import BERAToolsPanel, LogPanel
-except ImportError as e:
-    print(f"[BERATools] Error importing panel classes: {e}")
-    BERAToolsPanel = None
-    LogPanel = None
+except ImportError:
+    try:
+        from beratools_panel import BERAToolsPanel, LogPanel
+    except ImportError as e:
+        print(f"[BERATools] Error importing panel classes: {e}")
+        BERAToolsPanel = None
+        LogPanel = None
 
 # ============================================
 # Required TuiView Plugin Interface Functions
@@ -108,9 +111,58 @@ def _on_viewer_created(viewer_window):
         _log_panel = log_panel
         
         print("[BERATools] Dock panels created and added")
+
+        # Add a menu item to control panel visibility
+        _add_menu_action(viewer_window)
+
         print("[BERATools] Plugin initialized successfully")
         
     except Exception as e:
         print(f"[BERATools] ERROR initializing panels: {e}")
+        import traceback
+        traceback.print_exc()
+
+def _add_menu_action(viewer_window):
+    """Adds a menu item to the Tools menu to show the panels."""
+    try:
+        from PySide6.QtGui import QAction
+        from PySide6.QtWidgets import QMenu
+
+        tools_menu = None
+        # --- DEBUG: List all available menus ---
+        print("[BERATools DEBUG] Found menus:")
+        all_menus = viewer_window.menuBar().findChildren(QMenu)
+        for menu in all_menus:
+            print(f"[BERATools DEBUG]  - '{menu.title()}'")
+        # --- END DEBUG ---
+
+        # Find the 'Tools' menu, which might be named '&Tools'
+        for menu in all_menus:
+            if menu.title().replace('&', '').lower() == 'tools':
+                tools_menu = menu
+                break
+        
+        if not tools_menu:
+            print("[BERATools] 'Tools' menu not found. Cannot add menu item.")
+            return
+
+        def show_panels():
+            """Shows and raises the BERATools panels."""
+            global _beratools_panel, _log_panel
+            if _beratools_panel:
+                _beratools_panel.show()
+                _beratools_panel.raise_()
+            if _log_panel:
+                _log_panel.show()
+                _log_panel.raise_()
+
+        action = QAction("Show BERATools Panels", viewer_window)
+        action.triggered.connect(show_panels)
+        tools_menu.addAction(action)
+
+        print("[BERATools] 'Show BERATools Panels' menu item added to Tools menu.")
+
+    except Exception as e:
+        print(f"[BERATools] ERROR adding menu item: {e}")
         import traceback
         traceback.print_exc()
