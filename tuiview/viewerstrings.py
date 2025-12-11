@@ -20,5 +20,5 @@ prevent circular imports.
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-MESSAGE_TITLE = 'TuiView'
+MESSAGE_TITLE = 'BERATools'
 "Title for windows"

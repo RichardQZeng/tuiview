@@ -23,7 +23,18 @@ class BERAToolExecutor:
         Returns:
             Path: BERATools directory, or None if not found
         """
-        # Try several possible locations
+        # Try to find BERATools in installed package first
+        try:
+            import beratools
+            from pathlib import Path as _Path
+            beratools_dir = _Path(beratools.__file__).parent
+            if (beratools_dir / "tools").exists():
+                print(f"[BERATools] Found BERATools at {beratools_dir} (installed package)")
+                return beratools_dir
+        except Exception as e:
+            print(f"[BERATools] Error loading installed package: {e}")
+
+        # Fallback to previous locations
         possible_dirs = [
             Path(__file__).parent.parent.parent / "beratools" / "beratools",
             Path.home() / ".beratools" / "beratools",
