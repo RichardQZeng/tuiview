@@ -4,12 +4,9 @@ BERATools Plugin for TuiView
 This plugin integrates BERATools into TuiView, providing dockable panels
 for tool selection, parameter configuration, and execution.
 """
-
-with open("beratools_plugin_debug.log", "a") as f:
-    f.write("[DEBUG] beratools_plugin.py imported\n")
-print("[DEBUG] beratools_plugin.py imported")
-
 from PySide6.QtCore import Qt, QTimer
+
+print("[DEBUG] beratools_plugin.py imported")
 
 # Import dock panel classes
 try:
@@ -42,8 +39,6 @@ def description():
 
 
 def action(actioncode, param):
-    with open("beratools_plugin_debug.log", "a") as f:
-        f.write(f"[DEBUG] beratools_plugin.py action called with code: {actioncode}\n")
     print(f"[DEBUG] beratools_plugin.py action called with code: {actioncode}")
     """
     Main plugin action handler.

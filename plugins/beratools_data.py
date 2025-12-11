@@ -27,23 +27,20 @@ class BERAToolsManager:
         Returns:
             dict: Parsed beratools.json, or None if not found
         """
-        # Try multiple possible locations for beratools.json
-        possible_paths = [
-            Path(__file__).parent.parent.parent / "beratools" / "beratools" / "gui" / "assets" / "beratools.json",
-            Path.home() / ".beratools" / "beratools.json",
-        ]
-
-        for json_path in possible_paths:
+        # Try to load beratools.json from installed beratools package first
+        try:
+            import beratools
+            from pathlib import Path as _Path
+            beratools_dir = _Path(beratools.__file__).parent
+            json_path = beratools_dir / "gui" / "assets" / "beratools.json"
             if json_path.exists():
-                try:
-                    with open(json_path, 'r') as f:
-                        self.tools_metadata = json.load(f)
-                    print(f"[BERATools] Loaded metadata from {json_path}")
-                    self._parse_metadata()
-                    return self.tools_metadata
-                except Exception as e:
-                    print(f"[BERATools] Error reading {json_path}: {e}")
-                    continue
+                with open(json_path, 'r') as f:
+                    self.tools_metadata = json.load(f)
+                print(f"[BERATools] Loaded metadata from {json_path}")
+                self._parse_metadata()
+                return self.tools_metadata
+        except Exception as e:
+            print(f"[BERATools] Error loading from installed package: {e}")
 
         print("[BERATools] WARNING: beratools.json not found in any location")
         self.tools_metadata = {"toolbox": []}
