@@ -1,0 +1,19 @@
+   {
+       "version": "0.2.0",
+       "configurations": [
+           {
+               "name": "Run TuiView",
+               "type": "python",
+               "request": "launch",
+               "module": "tuiview.viewerapplication",
+               "cwd": "${workspaceFolder}",
+               "console": "integratedTerminal",
+               "justMyCode": false,
+               "args": [],
+               "env": {
+                   "TUIVIEW_PLUGINS_PATH": "D:\\BERATools\\ForestFlow\\tuiview\\plugins"
+               },
+               "purpose": ["debug-in-terminal"]
+           }
+       ]
+   }
