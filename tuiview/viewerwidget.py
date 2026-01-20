@@ -155,10 +155,9 @@ class ViewerWidget(QAbstractScrollArea):
         # events get fired that we wish to ignore
         self.suppressscrollevent = False
 
-        # set the background color to black so window
-        # is black when nothing loaded and when panning
-        # new areas are initially black.
-        self.setBackgroundColor(Qt.black)
+        # set the background color to white to match QGIS-style canvas
+        # when nothing loaded and when panning new areas are exposed.
+        self.setBackgroundColor(Qt.white)
 
         # to do with tools
         self.rubberBand = None
