@@ -6,4 +6,5 @@
 _build
 _templates
 _static
-
+TuiView.egg-info/
+*.pyd
