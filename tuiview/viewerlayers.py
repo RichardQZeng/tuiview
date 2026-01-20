@@ -1172,7 +1172,7 @@ class ViewerQueryPointLayer(ViewerLayer):
         raise NotImplementedError()
 
                 
-DEFAULT_VECTOR_COLOR = (255, 255, 0, 255)
+DEFAULT_VECTOR_COLOR = (0, 0, 255, 255)
 
 
 class ViewerVectorLayer(ViewerLayer):
