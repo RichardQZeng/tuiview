@@ -1,0 +1,12 @@
+sandbox_mode = "workspace-write"
+
+[sandbox_workspace_write]
+network_access = true
+writable_roots = [
+   "."
+]
+
+approval_policy = "auto"
+
+[shell_environment_policy]
+inherit = "all"
