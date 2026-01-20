@@ -434,7 +434,7 @@ class ViewerWindow(QMainWindow):
         settings.endGroup()
 
         settings.beginGroup('ViewerBackground')
-        value = settings.value("color", QColor(Qt.black), QColor)
+        value = settings.value("color", QColor(Qt.white), QColor)
         self.backgroundColor = value
         settings.endGroup()
 

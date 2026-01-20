@@ -157,7 +157,7 @@ class ViewerPreferencesDialog(QDialog):
         settings.endGroup()
 
         settings.beginGroup('ViewerBackground')
-        value = settings.value("color", QColor(Qt.black), QColor)
+        value = settings.value("color", QColor(Qt.white), QColor)
         self.settingBackgroundColor = value
         settings.endGroup()
 
