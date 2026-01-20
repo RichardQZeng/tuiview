@@ -66,6 +66,11 @@ def getGDALFlags():
         # paths appropriately
         gdalhome = os.getenv('GDAL_HOME')
         if gdalhome is None:
+            print(
+                "ERROR: The GDAL_HOME environment variable is not set.\\n"
+                "Please set GDAL_HOME to the root of your GDAL installation (e.g., C:\\Users\\Me\\miniconda3\\envs\\tuiview\\Library).\\n"
+                "See INSTALL.txt for details."
+            )
             raise SystemExit("need to define %GDAL_HOME%")
         extraargs['include_dirs'] = [os.path.join(gdalhome, 'include'), numpy_get_include()]
         extraargs['library_dirs'] = [os.path.join(gdalhome, 'lib')]
@@ -112,5 +117,3 @@ else:
     ext_modules = []
 
 setup(ext_modules=ext_modules)
-
-
