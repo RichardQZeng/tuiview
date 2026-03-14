@@ -25,6 +25,9 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QListWidget,
     QListWidgetItem,
+    QCheckBox,
+    QStyle,
+    QStyleOptionButton,
 )
 from PySide6.QtCore import Qt, Signal, QProcess, Slot, QTimer
 
@@ -99,6 +102,7 @@ class BERAToolsPanel(QDockWidget):
         self.current_process = None  # Current running QProcess
         self.all_tool_names = []  # For search filtering
         self.depends_on_specs = {}  # {variable: depends_on dict}
+        self.inline_dependents = {}  # {controller_variable: dependent_variable}
         self.show_advanced = False  # Optional params hidden by default
         self.history_store = BERAToolsHistoryStore()
         self.history_api_keys = []
@@ -431,6 +435,7 @@ class BERAToolsPanel(QDockWidget):
                 widget.deleteLater()
         self.param_widgets.clear()
         self.depends_on_specs.clear()
+        self.inline_dependents.clear()
 
         # Get tool parameters from metadata
         parameters = self.manager.get_tool_parameters(tool_name)
@@ -462,6 +467,8 @@ class BERAToolsPanel(QDockWidget):
             except Exception as e:
                 print(f"[BERATools] Error creating widget for parameter: {e}")
 
+        self._configure_inline_dependencies()
+
         # Add stretch at the end
         self.params_layout.addStretch()
         self._update_dependency_states()
@@ -474,6 +481,64 @@ class BERAToolsPanel(QDockWidget):
     def _on_parameter_value_changed(self, _variable, _value):
         """Re-evaluate parameter dependencies when controlling values change."""
         self._update_dependency_states()
+
+    def _configure_inline_dependencies(self):
+        self.inline_dependents.clear()
+
+        for variable, depends_on in self.depends_on_specs.items():
+            if not isinstance(depends_on, dict):
+                continue
+
+            mode = str(depends_on.get("mode", "hide")).lower()
+            if mode != "inline":
+                continue
+
+            if "conditions" in depends_on:
+                print(
+                    f"[BERATools] Inline depends_on for '{variable}' ignored: "
+                    "multi-condition inline is not supported"
+                )
+                continue
+
+            controller = depends_on.get("variable")
+            if not controller or controller == variable:
+                print(f"[BERATools] Inline depends_on for '{variable}' is invalid")
+                continue
+
+            if controller in self.inline_dependents:
+                print(
+                    f"[BERATools] Multiple inline dependents for '{controller}' are not supported"
+                )
+                continue
+
+            controller_widget = self.param_widgets.get(controller)
+            dependent_widget = self.param_widgets.get(variable)
+            if controller_widget is None or dependent_widget is None:
+                continue
+
+            if self._attach_inline_widget(controller_widget, dependent_widget):
+                self.inline_dependents[controller] = variable
+
+    def _attach_inline_widget(self, controller_widget, dependent_widget):
+        controller_layout = controller_widget.layout()
+        if not isinstance(controller_layout, QHBoxLayout):
+            return False
+
+        insert_index = controller_layout.count()
+        controller_label = getattr(controller_widget, "label", None)
+        if controller_label is not None:
+            for idx in range(controller_layout.count()):
+                item = controller_layout.itemAt(idx)
+                if item and item.widget() is controller_label:
+                    insert_index = idx + 1
+                    break
+
+        self.params_layout.removeWidget(dependent_widget)
+        if hasattr(dependent_widget, "set_inline_mode"):
+            dependent_widget.set_inline_mode()
+
+        controller_layout.insertWidget(insert_index, dependent_widget)
+        return True
 
     def _on_toggle_advanced_clicked(self):
         """Show/hide optional parameters."""
@@ -552,8 +617,87 @@ class BERAToolsPanel(QDockWidget):
             else:
                 is_visible = is_visible and dependency_active
 
+        self._apply_dependency_indent(variable, widget)
         widget.setVisible(is_visible)
         widget.setEnabled(is_enabled)
+
+    def _get_non_inline_dependency_parent(self, variable):
+        depends_on = self.depends_on_specs.get(variable)
+        if not isinstance(depends_on, dict):
+            return None
+
+        mode = str(depends_on.get("mode", "hide")).lower()
+        if mode == "inline":
+            return None
+
+        if "conditions" in depends_on:
+            conditions = depends_on.get("conditions", [])
+            if isinstance(conditions, list):
+                for condition in conditions:
+                    if not isinstance(condition, dict):
+                        continue
+                    controller = condition.get("variable")
+                    if controller:
+                        return controller
+            return None
+
+        controller = depends_on.get("variable")
+        return controller if controller else None
+
+    def _get_dependency_depth(self, variable):
+        depth = 0
+        visited = set()
+        current = variable
+
+        while True:
+            parent = self._get_non_inline_dependency_parent(current)
+            if not parent or parent in visited:
+                break
+            visited.add(parent)
+            depth += 1
+            current = parent
+
+        return depth
+
+    @staticmethod
+    def _get_checkbox_indent(check_box):
+        if not isinstance(check_box, QCheckBox):
+            return 0
+
+        style = check_box.style()
+        opt = QStyleOptionButton()
+        opt.initFrom(check_box)
+        indicator_width = style.pixelMetric(
+            QStyle.PixelMetric.PM_IndicatorWidth, opt, check_box
+        )
+        label_spacing = style.pixelMetric(
+            QStyle.PixelMetric.PM_CheckBoxLabelSpacing, opt, check_box
+        )
+        return max(0, indicator_width + label_spacing)
+
+    def _apply_dependency_indent(self, variable, widget):
+        layout = widget.layout()
+        if not isinstance(layout, QHBoxLayout):
+            return
+
+        depth = self._get_dependency_depth(variable)
+        if depth <= 0:
+            layout.setContentsMargins(0, 0, 0, 0)
+            return
+
+        parent_variable = self._get_non_inline_dependency_parent(variable)
+        parent_widget = (
+            self.param_widgets.get(parent_variable) if parent_variable else None
+        )
+
+        base_indent = 16
+        parent_checkbox = getattr(parent_widget, "checkbox", None)
+        checkbox_indent = self._get_checkbox_indent(parent_checkbox)
+        if checkbox_indent > 0:
+            base_indent = checkbox_indent + 8
+
+        depth_extra = min(depth - 1, 2) * 8
+        layout.setContentsMargins(base_indent + depth_extra, 0, 0, 0)
 
     def _update_dependency_states(self):
         for variable, widget in self.param_widgets.items():

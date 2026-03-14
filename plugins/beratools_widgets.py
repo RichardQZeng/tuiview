@@ -6,6 +6,7 @@ from typing import Any
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDoubleSpinBox,
     QFileDialog,
@@ -97,6 +98,47 @@ def _normalize_parameter_definition(param_def):
     return normalized
 
 
+def _is_boolean_list_parameter(param_def):
+    """Return True when metadata explicitly defines a boolean list parameter."""
+    param_type = str(param_def.get("type", "")).strip().lower()
+    if param_type != "list":
+        return False
+
+    subtype_tokens = parse_subtype_tokens(param_def.get("subtype", []))
+    if "bool" not in subtype_tokens:
+        return False
+
+    data = param_def.get("data", [])
+    if not isinstance(data, list) or len(data) != 2:
+        return False
+
+    return all(isinstance(item, bool) for item in data) and set(data) == {True, False}
+
+
+def _coerce_bool(value):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in ("true", "1", "yes", "on"):
+            return True
+        if normalized in ("false", "0", "no", "off"):
+            return False
+    return False
+
+
+def _strip_trailing_spacer(layout):
+    count = layout.count()
+    if count <= 0:
+        return
+
+    last_item = layout.itemAt(count - 1)
+    if last_item is not None and last_item.spacerItem() is not None:
+        layout.removeItem(last_item)
+
+
 class ParameterWidget(QWidget):
     """Base class for all parameter widgets."""
 
@@ -116,6 +158,7 @@ class ParameterWidget(QWidget):
         self.depends_on = param_def.get("depends_on")
         self.value = self.default_value
         self.validation_error = ""
+        self.label = None
 
     @abstractmethod
     def get_value(self) -> dict[str, Any]:
@@ -143,6 +186,9 @@ class ParameterWidget(QWidget):
     def clear_validation_error(self):
         self.validation_error = ""
 
+    def set_inline_mode(self):
+        pass
+
 
 def create_parameter_widget(param_def, parent=None):
     """Factory function to create appropriate widget for a parameter."""
@@ -157,6 +203,8 @@ def create_parameter_widget(param_def, parent=None):
         return FileParameterWidget(normalized_param_def, parent)
     if param_type == "directory":
         return DirectoryParameterWidget(normalized_param_def, parent)
+    if _is_boolean_list_parameter(normalized_param_def):
+        return BooleanParameterWidget(normalized_param_def, parent)
     if param_type == "list":
         return OptionsParameterWidget(normalized_param_def, parent)
 
@@ -173,9 +221,9 @@ class TextParameterWidget(ParameterWidget):
         layout = QHBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
 
-        label = QLabel(self.label_text)
-        label.setMinimumWidth(self.LABEL_MIN_WIDTH)
-        layout.addWidget(label)
+        self.label = QLabel(self.label_text)
+        self.label.setMinimumWidth(self.LABEL_MIN_WIDTH)
+        layout.addWidget(self.label)
 
         self.text_input = QLineEdit()
         self.text_input.setToolTip(self.description)
@@ -196,6 +244,12 @@ class TextParameterWidget(ParameterWidget):
         self.value = str(value) if value is not None else ""
         self.text_input.setText(self.value)
 
+    def set_inline_mode(self):
+        if self.label is not None:
+            self.label.setVisible(False)
+            self.label.setMinimumWidth(0)
+            self.label.setMaximumWidth(0)
+
 
 class NumberParameterWidget(ParameterWidget):
     """Widget for numeric (int/float) input parameters."""
@@ -210,9 +264,9 @@ class NumberParameterWidget(ParameterWidget):
         layout = QHBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
 
-        label = QLabel(self.label_text)
-        label.setMinimumWidth(self.LABEL_MIN_WIDTH)
-        layout.addWidget(label)
+        self.label = QLabel(self.label_text)
+        self.label.setMinimumWidth(self.LABEL_MIN_WIDTH)
+        layout.addWidget(self.label)
 
         if self.is_float:
             self.number_input = QDoubleSpinBox()
@@ -263,6 +317,13 @@ class NumberParameterWidget(ParameterWidget):
             elif not self.is_float and isinstance(self.number_input, QSpinBox):
                 self.number_input.setValue(int(fallback))
 
+    def set_inline_mode(self):
+        if self.label is not None:
+            self.label.setVisible(False)
+            self.label.setMinimumWidth(0)
+            self.label.setMaximumWidth(0)
+        _strip_trailing_spacer(self.layout())
+
 
 class OptionsParameterWidget(ParameterWidget):
     """Widget for list/options selection parameters."""
@@ -276,9 +337,9 @@ class OptionsParameterWidget(ParameterWidget):
         layout = QHBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
 
-        label = QLabel(self.label_text)
-        label.setMinimumWidth(self.LABEL_MIN_WIDTH)
-        layout.addWidget(label)
+        self.label = QLabel(self.label_text)
+        self.label.setMinimumWidth(self.LABEL_MIN_WIDTH)
+        layout.addWidget(self.label)
 
         self.combo_box = QComboBox()
         self.combo_box.addItems(self.option_labels)
@@ -323,6 +384,55 @@ class OptionsParameterWidget(ParameterWidget):
     def get_dependency_value(self):
         return self.value
 
+    def set_inline_mode(self):
+        if self.label is not None:
+            self.label.setVisible(False)
+            self.label.setMinimumWidth(0)
+            self.label.setMaximumWidth(0)
+        _strip_trailing_spacer(self.layout())
+
+
+class BooleanParameterWidget(ParameterWidget):
+    """Widget for boolean parameters encoded as list+bool metadata."""
+
+    def __init__(self, param_def, parent=None):
+        super().__init__(param_def, parent)
+
+        layout = QHBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        self.checkbox = QCheckBox()
+        self.checkbox.setToolTip(self.description)
+        self.checkbox.toggled.connect(self._on_toggled)
+        layout.addWidget(self.checkbox)
+
+        self.label = QLabel(self.label_text)
+        self.label.setMinimumWidth(self.LABEL_MIN_WIDTH)
+        self.label.setToolTip(self.description)
+        layout.addWidget(self.label)
+
+        layout.addStretch()
+
+        self.setLayout(layout)
+        self.set_value(self.default_value)
+
+    def _on_toggled(self, checked):
+        self.value = bool(checked)
+        self.emit_value_changed()
+
+    def get_value(self):
+        return {self.variable: self.value}
+
+    def set_value(self, value):
+        self.value = _coerce_bool(value)
+        self.checkbox.setChecked(self.value)
+
+    def set_inline_mode(self):
+        if self.label is not None:
+            self.label.setVisible(False)
+            self.label.setMinimumWidth(0)
+            self.label.setMaximumWidth(0)
+
 
 class FileParameterWidget(ParameterWidget):
     """Widget for file selection (input/output)."""
@@ -343,9 +453,9 @@ class FileParameterWidget(ParameterWidget):
         layout = QHBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
 
-        label = QLabel(self.label_text)
-        label.setMinimumWidth(self.LABEL_MIN_WIDTH)
-        layout.addWidget(label)
+        self.label = QLabel(self.label_text)
+        self.label.setMinimumWidth(self.LABEL_MIN_WIDTH)
+        layout.addWidget(self.label)
 
         self.file_input = QLineEdit()
         self.file_input.setReadOnly(False)
@@ -658,6 +768,12 @@ class FileParameterWidget(ParameterWidget):
         self._refresh_vector_state()
         self.emit_value_changed()
 
+    def set_inline_mode(self):
+        if self.label is not None:
+            self.label.setVisible(False)
+            self.label.setMinimumWidth(0)
+            self.label.setMaximumWidth(0)
+
 
 class DirectoryParameterWidget(ParameterWidget):
     """Widget for directory selection."""
@@ -668,9 +784,9 @@ class DirectoryParameterWidget(ParameterWidget):
         layout = QHBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
 
-        label = QLabel(self.label_text)
-        label.setMinimumWidth(self.LABEL_MIN_WIDTH)
-        layout.addWidget(label)
+        self.label = QLabel(self.label_text)
+        self.label.setMinimumWidth(self.LABEL_MIN_WIDTH)
+        layout.addWidget(self.label)
 
         self.dir_input = QLineEdit()
         self.dir_input.setReadOnly(False)
@@ -705,3 +821,9 @@ class DirectoryParameterWidget(ParameterWidget):
     def set_value(self, value):
         self.value = str(value) if value else ""
         self.dir_input.setText(self.value)
+
+    def set_inline_mode(self):
+        if self.label is not None:
+            self.label.setVisible(False)
+            self.label.setMinimumWidth(0)
+            self.label.setMaximumWidth(0)
