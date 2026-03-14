@@ -10,8 +10,19 @@ import re
 import shlex
 
 from PySide6.QtWidgets import (
-    QDockWidget, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTreeWidget, QTreeWidgetItem,
-    QScrollArea, QPushButton, QPlainTextEdit, QProgressBar, QLineEdit, QMessageBox
+    QDockWidget,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLabel,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QScrollArea,
+    QPushButton,
+    QPlainTextEdit,
+    QProgressBar,
+    QLineEdit,
+    QMessageBox,
 )
 from PySide6.QtCore import Qt, Signal, QProcess, Slot, QTimer
 
@@ -19,21 +30,27 @@ from PySide6.QtCore import Qt, Signal, QProcess, Slot, QTimer
 import sys
 import os
 import pathlib
+
 plugin_dir = pathlib.Path(__file__).parent
 if str(plugin_dir) not in sys.path:
     sys.path.insert(0, str(plugin_dir))
 
+
 def name():
     return "BERATools Panel"
+
 
 def author():
     return "BERATools Team"
 
+
 def description():
     return "Main BERATools dock panel for tool selection and execution."
 
+
 def action(actioncode, param):
     print(f"[BERATools Panel] Action called with code: {actioncode}, param: {param}")
+
 
 # Import data manager, widgets, and executor
 try:
@@ -51,23 +68,23 @@ except ImportError:
 class BERAToolsPanel(QDockWidget):
     """
     Main BERATools dock panel.
-    
+
     Contains:
     - Tool selection tree
     - Parameter input widgets
     - Run/Stop buttons
     """
-    
+
     # Signals
     output_received = Signal(str)  # Emitted when tool produces output
     progress_updated = Signal(int)  # Emitted when progress updates
     tool_selected = Signal(str)  # Emitted when user selects a tool
     status_message = Signal(str)  # Emitted for UI status updates
-    
+
     def __init__(self, parent=None):
         """Initialize BERATools panel."""
         super().__init__("BERATools", parent)
-        
+
         # Load tools metadata
         self.manager = BERAToolsManager()
         self.executor = BERAToolExecutor()
@@ -76,44 +93,46 @@ class BERAToolsPanel(QDockWidget):
         self.param_widgets = {}  # Store references to parameter widgets
         self.current_process = None  # Current running QProcess
         self.all_tool_names = []  # For search filtering
-        
+        self.depends_on_specs = {}  # {variable: depends_on dict}
+        self.show_advanced = False  # Optional params hidden by default
+
         # Create main widget and layout
         main_widget = QWidget()
         layout = QVBoxLayout()
         layout.setContentsMargins(5, 5, 5, 5)
         layout.setSpacing(5)
-        
+
         # Title
         layout.addWidget(QLabel("Select Tool:"))
-        
+
         # Search box
         self.search_box = QLineEdit()
         self.search_box.setPlaceholderText("Search tools...")
         self.search_box.setMaximumHeight(25)
         self.search_box.textChanged.connect(self._on_search_text_changed)
         layout.addWidget(self.search_box)
-        
+
         # Tree widget for tools
         self.tool_tree = QTreeWidget()
         self.tool_tree.setHeaderHidden(True)
         self.tool_tree.setColumnCount(1)
         self.tool_tree.setMaximumHeight(150)
         layout.addWidget(self.tool_tree)
-        
+
         # Populate tree
         self._populate_tool_tree()
-        
+
         # Connect tree selection signal
         self.tool_tree.itemClicked.connect(self._on_tool_selected)
-        
+
         # Parameters section
         layout.addWidget(QLabel("Parameters:"))
-        
+
         # Scroll area for parameters
         self.params_scroll = QScrollArea()
         self.params_scroll.setWidgetResizable(True)
         self.params_scroll.setStyleSheet("QScrollArea { border: none; }")
-        
+
         # Container for parameter widgets
         self.params_container = QWidget()
         self.params_layout = QVBoxLayout()
@@ -121,59 +140,64 @@ class BERAToolsPanel(QDockWidget):
         self.params_layout.setSpacing(2)
         self.params_container.setLayout(self.params_layout)
         self.params_scroll.setWidget(self.params_container)
-        
+
         layout.addWidget(self.params_scroll)
-        
+
         # Status label
         self.status_label = QLabel("")
         self.status_label.setStyleSheet("color: gray; font-size: 10px;")
         layout.addWidget(self.status_label)
-        
+
         # Control buttons (top row)
         button_layout1 = QHBoxLayout()
-        
+
         self.load_defaults_btn = QPushButton("Load Defaults")
         self.load_defaults_btn.clicked.connect(self._on_load_defaults_clicked)
         self.load_defaults_btn.setMaximumWidth(100)
         button_layout1.addWidget(self.load_defaults_btn)
-        
+
+        self.advanced_btn = QPushButton("Show Advanced Options")
+        self.advanced_btn.setMaximumWidth(170)
+        self.advanced_btn.clicked.connect(self._on_toggle_advanced_clicked)
+        button_layout1.addWidget(self.advanced_btn)
+
         button_layout1.addStretch()
         layout.addLayout(button_layout1)
-        
+
         # Control buttons (bottom row)
         button_layout2 = QHBoxLayout()
-        
+
         self.run_btn = QPushButton("Run")
         self.run_btn.clicked.connect(self._on_run_clicked)
         button_layout2.addWidget(self.run_btn)
-        
+
         self.stop_btn = QPushButton("Stop")
         self.stop_btn.clicked.connect(self._on_stop_clicked)
         self.stop_btn.setEnabled(False)
         button_layout2.addWidget(self.stop_btn)
-        
+
         button_layout2.addStretch()
         layout.addLayout(button_layout2)
-        
+
         main_widget.setLayout(layout)
         self.setWidget(main_widget)
-        
+
         # Panel properties
         self.setObjectName("BERAToolsPanel")
         self.setMinimumWidth(300)
         self.setMinimumHeight(400)
-        
+
         # Status update signal
         self.status_message.connect(self._on_status_message)
-    
+
     def _populate_tool_tree(self):
         """Populate tree widget from metadata."""
         self.tool_tree.clear()
         self.all_tool_names.clear()
-        
+
         # Get organized tools
         tools_by_category = self.manager.get_all_tools()
-        
+
         if not tools_by_category:
             # Handle missing beratools.json
             error_item = QTreeWidgetItem()
@@ -182,97 +206,101 @@ class BERAToolsPanel(QDockWidget):
             self.status_message.emit("ERROR: Could not load tools metadata")
             print("[BERATools] ERROR: No tools loaded from metadata")
             return
-        
+
         for category in self.manager.toolbox_list:
             # Create category node
             category_item = QTreeWidgetItem()
             category_item.setText(0, category)
             category_item.setExpanded(True)
             self.tool_tree.addTopLevelItem(category_item)
-            
+
             # Add tools under category
             tools = tools_by_category.get(category, [])
             for tool_name in tools:
                 self.all_tool_names.append(tool_name)  # Track for search
                 tool_item = QTreeWidgetItem()
                 tool_item.setText(0, tool_name)
-                tool_item.setData(0, Qt.UserRole, tool_name)  # Store tool name for later
+                tool_item.setData(
+                    0, Qt.ItemDataRole.UserRole, tool_name
+                )  # Store tool name for later
                 category_item.addChild(tool_item)
-        
+
         # Expand all categories by default
         self.tool_tree.expandAll()
-        
+
         if self.all_tool_names:
             self.status_message.emit(f"Loaded {len(self.all_tool_names)} tools")
             print(f"[BERATools] Loaded {len(self.all_tool_names)} tools from metadata")
-    
+
     def _on_search_text_changed(self, search_text):
         """Filter tool tree based on search text (Task 9.1)."""
         search_text = search_text.lower().strip()
-        
+
         # Iterate through all top-level categories
         for i in range(self.tool_tree.topLevelItemCount()):
             category_item = self.tool_tree.topLevelItem(i)
             category_visible = False
-            
+
             # Check each tool in the category
             for j in range(category_item.childCount()):
                 tool_item = category_item.child(j)
                 tool_name = tool_item.text(0).lower()
-                
+
                 # Show item if search text matches
                 matches = search_text in tool_name if search_text else True
                 tool_item.setHidden(not matches)
-                
+
                 if matches:
                     category_visible = True
-            
+
             # Show category if any tool matches
             category_item.setHidden(not category_visible)
-    
+
     def _on_status_message(self, message):
         """Update status label with message (Task 9.1)."""
         self.status_label.setText(message)
         print(f"[Status] {message}")
-    
+
     def _on_tool_selected(self, item, column):
         """
         Handle tool selection in the tree.
-        
+
         Args:
             item: QTreeWidgetItem that was clicked
             column: Column index (always 0)
         """
         # Get parent item to check if this is a tool (not a category)
         parent = item.parent()
-        
+
         # Only process if this is a child item (tool), not a category
         if parent is None:
             return  # Clicked on a category, ignore
-        
+
         # Get tool name from the item's data
-        tool_name = item.data(0, Qt.UserRole)
-        
+        tool_name = item.data(0, Qt.ItemDataRole.UserRole)
+
         if tool_name:
             self.selected_tool = tool_name
-            
+
             # Get tool_api from metadata
             tool = self.manager.get_tool(tool_name)
             if tool:
                 self.selected_tool_api = tool.get("tool_api", "")
-            
-            print(f"[BERATools] Selected tool: {tool_name} (api: {self.selected_tool_api})")
-            
+
+            print(
+                f"[BERATools] Selected tool: {tool_name} (api: {self.selected_tool_api})"
+            )
+
             # Load and display parameters
             self._load_tool_parameters(tool_name)
-            
+
             # Emit signal
             self.tool_selected.emit(tool_name)
-    
+
     def _load_tool_parameters(self, tool_name):
         """
         Load and display parameters for the selected tool.
-        
+
         Args:
             tool_name (str): Selected tool name
         """
@@ -282,14 +310,15 @@ class BERAToolsPanel(QDockWidget):
             if widget:
                 widget.deleteLater()
         self.param_widgets.clear()
-        
+        self.depends_on_specs.clear()
+
         # Get tool parameters from metadata
         parameters = self.manager.get_tool_parameters(tool_name)
-        
+
         if not parameters:
             print(f"[BERATools] No parameters for tool: {tool_name}")
             return
-        
+
         # Create widgets for each parameter
         for param_def in parameters:
             try:
@@ -299,21 +328,124 @@ class BERAToolsPanel(QDockWidget):
                     variable = param_def.get("variable", "")
                     if variable:
                         self.param_widgets[variable] = widget
-                    
+                        depends_on = param_def.get("depends_on")
+                        if isinstance(depends_on, dict):
+                            self.depends_on_specs[variable] = depends_on
+
+                    if hasattr(widget, "value_changed"):
+                        widget.value_changed.connect(self._on_parameter_value_changed)
+
                     self.params_layout.addWidget(widget)
-                    print(f"[BERATools] Added parameter widget: {param_def.get('label', 'unknown')}")
+                    print(
+                        f"[BERATools] Added parameter widget: {param_def.get('label', 'unknown')}"
+                    )
             except Exception as e:
                 print(f"[BERATools] Error creating widget for parameter: {e}")
-        
+
         # Add stretch at the end
         self.params_layout.addStretch()
-        
-        print(f"[BERATools] Loaded {len(self.param_widgets)} parameter widgets for {tool_name}")
-    
+        self._update_dependency_states()
+
+        print(
+            f"[BERATools] Loaded {len(self.param_widgets)} parameter widgets for {tool_name}"
+        )
+
+    @Slot(str, object)
+    def _on_parameter_value_changed(self, _variable, _value):
+        """Re-evaluate parameter dependencies when controlling values change."""
+        self._update_dependency_states()
+
+    def _on_toggle_advanced_clicked(self):
+        """Show/hide optional parameters."""
+        self.show_advanced = not self.show_advanced
+        if self.show_advanced:
+            self.advanced_btn.setText("Hide Advanced Options")
+        else:
+            self.advanced_btn.setText("Show Advanced Options")
+
+        self._update_dependency_states()
+
+    def _get_widget_dependency_value(self, variable):
+        widget = self.param_widgets.get(variable)
+        if widget is None:
+            return None
+
+        if hasattr(widget, "get_dependency_value"):
+            return widget.get_dependency_value()
+
+        value_dict = widget.get_value()
+        if isinstance(value_dict, dict):
+            return value_dict.get(variable)
+        return None
+
+    @staticmethod
+    def _value_matches_condition(current_value, expected_value):
+        if isinstance(expected_value, bool) and isinstance(current_value, str):
+            return (
+                current_value.lower() in ("true", "1", "yes", "on")
+            ) == expected_value
+        return current_value == expected_value
+
+    def _evaluate_depends_on(self, depends_on):
+        if not isinstance(depends_on, dict):
+            return True
+
+        if "conditions" in depends_on:
+            logic = str(depends_on.get("logic", "or")).lower()
+            conditions = depends_on.get("conditions", [])
+            if not isinstance(conditions, list) or not conditions:
+                return True
+
+            matches = []
+            for condition in conditions:
+                if not isinstance(condition, dict):
+                    continue
+                controller = condition.get("variable")
+                expected = condition.get("condition")
+                current = self._get_widget_dependency_value(controller)
+                matches.append(self._value_matches_condition(current, expected))
+
+            if not matches:
+                return True
+            return all(matches) if logic == "and" else any(matches)
+
+        controller = depends_on.get("variable")
+        expected = depends_on.get("condition")
+        if not controller:
+            return True
+        current = self._get_widget_dependency_value(controller)
+        return self._value_matches_condition(current, expected)
+
+    def _apply_widget_state(self, variable, widget):
+        """Apply advanced/dependency state for one widget."""
+        is_optional = bool(getattr(widget, "optional", False))
+        is_visible = self.show_advanced or not is_optional
+        is_enabled = True
+
+        depends_on = self.depends_on_specs.get(variable)
+        if isinstance(depends_on, dict):
+            dependency_active = self._evaluate_depends_on(depends_on)
+            mode = str(depends_on.get("mode", "hide")).lower()
+
+            if mode == "inline":
+                is_enabled = dependency_active
+            else:
+                is_visible = is_visible and dependency_active
+
+        widget.setVisible(is_visible)
+        widget.setEnabled(is_enabled)
+
+    def _update_dependency_states(self):
+        for variable, widget in self.param_widgets.items():
+            self._apply_widget_state(variable, widget)
+
+        self.params_container.updateGeometry()
+        self.params_container.update()
+
     def get_tool_parameters(self):
         """
         Get current parameter values from all widgets.
-        
+
         Returns:
             dict: {variable: value, ...} or None if required params missing
         """
@@ -324,19 +456,19 @@ class BERAToolsPanel(QDockWidget):
                 params.update(value_dict)
             except Exception as e:
                 print(f"[BERATools] Error getting value from {variable}: {e}")
-        
+
         return params if params else None
-    
+
     def _on_load_defaults_clicked(self):
         """Load default values for all parameters (Task 9.1)."""
         if not self.selected_tool:
             self.status_message.emit("No tool selected")
             return
-        
+
         try:
             for widget in self.param_widgets.values():
                 widget.set_default_value()
-            
+
             self.status_message.emit(f"Defaults loaded for {self.selected_tool}")
             print(f"[BERATools] Loaded default values for {self.selected_tool}")
         except Exception as e:
@@ -344,19 +476,19 @@ class BERAToolsPanel(QDockWidget):
             self.status_message.emit(error_msg)
             print(f"[BERATools] {error_msg}")
             QMessageBox.warning(self, "Error", error_msg)
-    
+
     def _on_run_clicked(self):
         """Handle Run button click (Task 9.2: Validation)."""
         if not self.selected_tool:
             self.status_message.emit("ERROR: No tool selected")
             return
-        
+
         # Get parameter values
         params = self.get_tool_parameters()
         if not params:
             self.status_message.emit("ERROR: No parameters available")
             return
-        
+
         # Validate parameters before execution
         validation_errors = self._validate_parameters()
         if validation_errors:
@@ -365,22 +497,22 @@ class BERAToolsPanel(QDockWidget):
             QMessageBox.warning(self, "Validation Error", error_msg)
             print(f"[BERATools] Validation errors:\n{error_msg}")
             return
-        
+
         self.status_message.emit(f"Running {self.selected_tool}...")
         print(f"[BERATools] Running tool: {self.selected_tool}")
         print(f"[BERATools] Parameters: {params}")
-        
+
         # Start subprocess
         self._start_process()
-        
+
         # Disable Run button, enable Stop button (Task 9.1)
         self.run_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
-    
+
     def _validate_parameters(self):
         """
         Validate all parameter values before execution (Task 9.2).
-        
+
         Returns:
             list: List of error messages (empty if all valid)
         """
@@ -388,72 +520,96 @@ class BERAToolsPanel(QDockWidget):
         tool = self.manager.get_tool(self.selected_tool)
         if not tool:
             return ["Tool definition not found"]
-        
+
         tool_params = tool.get("parameters", [])
-        
+
         for param_def in tool_params:
             variable = param_def.get("variable", "")
             optional = param_def.get("optional", False)
             label = param_def.get("label", variable)
-            
+
             if variable not in self.param_widgets:
                 if not optional:
                     errors.append(f"Required parameter missing: {label}")
                 continue
-            
+
             try:
                 widget = self.param_widgets[variable]
                 value_dict = widget.get_value()
                 value = value_dict.get(variable, "")
-                
+
                 # Check required parameters
                 if not optional and not value:
                     errors.append(f"Required parameter empty: {label}")
-                
+
+                if hasattr(widget, "get_validation_error"):
+                    validation_error = widget.get_validation_error()
+                    if validation_error:
+                        errors.append(f"{label}: {validation_error}")
+
                 # Type-specific validation
-                param_type = param_def.get("type", "")
-                if param_type == "file" and value:
+                param_type = str(param_def.get("type", "")).lower()
+                file_alias_types = {
+                    "file",
+                    "existing_vector",
+                    "new_vector",
+                    "existing_line_vector",
+                    "existing_polygon_vector",
+                    "existing_point_vector",
+                    "new_line_vector",
+                    "new_polygon_vector",
+                    "new_point_vector",
+                }
+                if param_type in file_alias_types and value:
                     # Check if file exists for input files
                     if not param_def.get("output", False):
                         from pathlib import Path
-                        if not Path(value).exists():
-                            errors.append(f"Input file does not exist: {label} ({value})")
-                
+
+                        value_path = (
+                            value.split("|", 1)[0]
+                            if isinstance(value, str)
+                            else str(value)
+                        )
+                        if value_path and not Path(value_path).exists():
+                            errors.append(
+                                f"Input file does not exist: {label} ({value_path})"
+                            )
+
                 elif param_type == "number" and value:
                     # Validate number format
                     try:
                         float(value)
                     except (ValueError, TypeError):
                         errors.append(f"Invalid number format: {label} ({value})")
-            
+
             except Exception as e:
                 errors.append(f"Error validating {label}: {e}")
-        
+
         return errors
-    
+
     def _start_process(self):
         """Start BERATool subprocess (Task 9.2: Error handling)."""
         if self.current_process:
             self.status_message.emit("ERROR: A process is already running")
             print("[BERATools] A process is already running")
             return
-        
+
         if not self.selected_tool_api:
             self.status_message.emit("ERROR: No tool API available")
             print("[BERATools] No tool API available")
             return
-        
+
         # Get current parameters
         params = self.get_tool_parameters()
         if not params:
             self.status_message.emit("ERROR: No parameters to execute")
             print("[BERATools] No parameters to execute")
             return
-        
+
         # Build command using executor
         try:
             program, args = self.executor.build_command(self.selected_tool_api, params)
-            
+
             if not program or not args:
                 self.status_message.emit("ERROR: Failed to build tool command")
                 print("[BERATools] Failed to build tool command")
@@ -464,16 +620,16 @@ class BERAToolsPanel(QDockWidget):
             print(f"[BERATools] {error_msg}")
             QMessageBox.critical(self, "Execution Error", error_msg)
             return
-        
+
         # Create and start process
         self.current_process = QProcess()
         self.current_process.readyReadStandardOutput.connect(self._handle_stdout)
         self.current_process.readyReadStandardError.connect(self._handle_stderr)
         self.current_process.finished.connect(self._handle_process_finished)
-        
+
         print(f"[BERATools] Starting process: {program} {' '.join(args[:3])}...")
         self.current_process.start(program, args)
-        
+
         if not self.current_process.waitForStarted(3000):
             error_msg = "Failed to start process"
             self.status_message.emit(f"ERROR: {error_msg}")
@@ -482,51 +638,51 @@ class BERAToolsPanel(QDockWidget):
             self.run_btn.setEnabled(True)
             self.stop_btn.setEnabled(False)
             QMessageBox.critical(self, "Execution Error", error_msg)
-    
+
     def _handle_stdout(self):
         """Handle stdout from subprocess."""
         data = self.current_process.readAllStandardOutput()
-        text = bytes(data).decode('utf8', errors='ignore')
+        text = bytes(data).decode("utf8", errors="ignore")
         if text:
             # Parse for progress indicators
             self._parse_progress(text)
             # Emit the output
             self.output_received.emit(text)
-    
+
     def _handle_stderr(self):
         """Handle stderr from subprocess (Task 9.2: Error handling)."""
         data = self.current_process.readAllStandardError()
-        text = bytes(data).decode('utf8', errors='ignore')
+        text = bytes(data).decode("utf8", errors="ignore")
         if text:
             print(f"[STDERR] {text.strip()}")
             self.output_received.emit(f"[ERROR] {text}")  # Prefix errors in log
-    
+
     def _parse_progress(self, output_text):
         """
         Parse tool output for progress indicators.
-        
+
         Looks for:
         1. Percentage: "50%" or "Processing... 50%" → extract 50
         2. PROGRESS_LABEL: "PROGRESS_LABEL 'Processing data'" → emit label
-        
+
         Based on BERATools' custom_callback from bt_gui_main.py.
-        
+
         Args:
             output_text (str): Output line from tool
         """
         output_text = str(output_text).strip()
-        
+
         if not output_text:
             return
-        
+
         # Remove ANSI escape sequences
-        output_text = re.sub(r'\x1b\[0m', '', output_text)
-        
+        output_text = re.sub(r"\x1b\[0m", "", output_text)
+
         # Check for percentage progress
         if "%" in output_text:
             try:
                 # Extract all numbers followed by % sign
-                matches = re.findall(r'(\d+(?:\.\d+)?)\s*%', output_text)
+                matches = re.findall(r"(\d+(?:\.\d+)?)\s*%", output_text)
                 if matches:
                     # Take the last percentage found (most recent)
                     progress = int(float(matches[-1]))
@@ -535,7 +691,7 @@ class BERAToolsPanel(QDockWidget):
                         self.progress_updated.emit(progress)
             except (ValueError, IndexError):
                 pass
-        
+
         # Check for PROGRESS_LABEL
         if "PROGRESS_LABEL" in output_text:
             try:
@@ -548,12 +704,12 @@ class BERAToolsPanel(QDockWidget):
                     # Could emit a separate signal for label, but for now just log
             except Exception:
                 pass
-    
+
     def _handle_process_finished(self):
         """Handle process completion (Task 9.2: Error handling)."""
         exit_code = self.current_process.exitCode()
         print(f"[BERATools] Process finished with exit code: {exit_code}")
-        
+
         if exit_code == 0:
             print("[BERATools] Tool completed successfully")
             self.status_message.emit(f"✓ {self.selected_tool} completed successfully")
@@ -564,13 +720,13 @@ class BERAToolsPanel(QDockWidget):
             print(f"[BERATools] {error_msg}")
             self.status_message.emit(f"✗ {error_msg}")
             self.output_received.emit(f"\n[FAILURE] {error_msg}\n")
-        
+
         self.current_process = None
-        
+
         # Re-enable Run button
         self.run_btn.setEnabled(True)
         self.stop_btn.setEnabled(False)
-    
+
     def _handle_tool_success(self):
         """Handle successful tool completion."""
         # Find output file parameters
@@ -579,7 +735,7 @@ class BERAToolsPanel(QDockWidget):
             param_def = self.manager.get_tool(self.selected_tool)
             if not param_def:
                 continue
-            
+
             # Look through tool parameters for output files
             params = param_def.get("parameters", [])
             for param in params:
@@ -591,7 +747,7 @@ class BERAToolsPanel(QDockWidget):
                             output_files[variable] = value_dict[variable]
                     except Exception:
                         pass
-        
+
         if output_files:
             print(f"[BERATools] Output files available: {output_files}")
             # Log message about importing outputs
@@ -599,13 +755,13 @@ class BERAToolsPanel(QDockWidget):
             for var, path in output_files.items():
                 msg += f"\n  - {path}"
             print(f"[BERATools] {msg}")
-    
+
     def _on_stop_clicked(self):
         """Handle Stop button click."""
         if self.current_process:
             print("[BERATools] Stopping process...")
             self.current_process.terminate()
-        
+
         # Re-enable Run button
         self.run_btn.setEnabled(True)
         self.stop_btn.setEnabled(False)
@@ -614,36 +770,36 @@ class BERAToolsPanel(QDockWidget):
 class LogPanel(QDockWidget):
     """
     Log and progress dock panel.
-    
+
     Contains:
     - Execution log (text output)
     - Progress bar
     """
-    
+
     def __init__(self, parent=None):
         """Initialize log panel."""
         super().__init__("Execution Log", parent)
-        
+
         # Create main widget and layout
         main_widget = QWidget()
         layout = QVBoxLayout()
         layout.setContentsMargins(5, 5, 5, 5)
         layout.setSpacing(5)
-        
+
         # Progress bar with label
         progress_layout = QHBoxLayout()
         progress_label = QLabel("Progress:")
         progress_label.setMaximumWidth(60)
         progress_layout.addWidget(progress_label)
-        
+
         self.progress_bar = QProgressBar()
         self.progress_bar.setMinimum(0)
         self.progress_bar.setMaximum(100)
         self.progress_bar.setValue(0)
         progress_layout.addWidget(self.progress_bar)
-        
+
         layout.addLayout(progress_layout)
-        
+
         # Log text area
         self.log_text = QPlainTextEdit()
         self.log_text.setReadOnly(True)
@@ -652,26 +808,26 @@ class LogPanel(QDockWidget):
         font.setFamily("Consolas" if font.family() == "Consolas" else "Courier New")
         self.log_text.setFont(font)
         layout.addWidget(self.log_text)
-        
+
         # Clear button
         clear_btn = QPushButton("Clear")
         clear_btn.setMaximumWidth(80)
         clear_btn.clicked.connect(self.clear_log)
         layout.addWidget(clear_btn)
-        
+
         main_widget.setLayout(layout)
         self.setWidget(main_widget)
-        
+
         # Panel properties
         self.setObjectName("LogPanel")
         self.setMinimumWidth(300)
         self.setMinimumHeight(200)
-    
+
     @Slot(str)
     def append_log(self, text):
         """
         Append text to the log display with formatting (Task 9.1).
-        
+
         Args:
             text (str): Text to append
         """
@@ -679,17 +835,17 @@ class LogPanel(QDockWidget):
             # Add timestamp for cleaner output
             text = text.rstrip()
             self.log_text.appendPlainText(text)
-    
+
     @Slot(int)
     def set_progress(self, value):
         """
         Set progress bar value.
-        
+
         Args:
             value (int): Progress percentage (0-100)
         """
         self.progress_bar.setValue(value)
-    
+
     def clear_log(self):
         """Clear all log text."""
         self.log_text.clear()
