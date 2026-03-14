@@ -23,6 +23,8 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QLineEdit,
     QMessageBox,
+    QListWidget,
+    QListWidgetItem,
 )
 from PySide6.QtCore import Qt, Signal, QProcess, Slot, QTimer
 
@@ -58,11 +60,13 @@ try:
     from .beratools_data import BERAToolsManager
     from .beratools_widgets import create_parameter_widget
     from .beratools_executor import BERAToolExecutor
+    from .beratools_history_store import BERAToolsHistoryStore
 except ImportError:
     # When imported directly or from tests
     from beratools_data import BERAToolsManager
     from beratools_widgets import create_parameter_widget
     from beratools_executor import BERAToolExecutor
+    from beratools_history_store import BERAToolsHistoryStore
 
 
 class BERAToolsPanel(QDockWidget):
@@ -80,6 +84,7 @@ class BERAToolsPanel(QDockWidget):
     progress_updated = Signal(int)  # Emitted when progress updates
     tool_selected = Signal(str)  # Emitted when user selects a tool
     status_message = Signal(str)  # Emitted for UI status updates
+    history_updated = Signal(object)  # Emitted when tool history list changes
 
     def __init__(self, parent=None):
         """Initialize BERATools panel."""
@@ -95,6 +100,8 @@ class BERAToolsPanel(QDockWidget):
         self.all_tool_names = []  # For search filtering
         self.depends_on_specs = {}  # {variable: depends_on dict}
         self.show_advanced = False  # Optional params hidden by default
+        self.history_store = BERAToolsHistoryStore()
+        self.history_api_keys = []
 
         # Create main widget and layout
         main_widget = QWidget()
@@ -190,6 +197,134 @@ class BERAToolsPanel(QDockWidget):
         # Status update signal
         self.status_message.connect(self._on_status_message)
 
+        # Load shared BERATools history state
+        self._load_history_state()
+
+    def _get_tool_name_from_api(self, tool_api):
+        if not tool_api:
+            return None
+
+        tools_metadata = self.manager.tools_metadata
+        if not isinstance(tools_metadata, dict):
+            return None
+
+        for toolbox in tools_metadata.get("toolbox", []):
+            for tool in toolbox.get("tools", []):
+                if tool.get("tool_api") == tool_api:
+                    return tool.get("name")
+        return None
+
+    def _find_tool_item_by_name(self, tool_name):
+        if not tool_name:
+            return None
+
+        for i in range(self.tool_tree.topLevelItemCount()):
+            category_item = self.tool_tree.topLevelItem(i)
+            if category_item is None:
+                continue
+            for j in range(category_item.childCount()):
+                tool_item = category_item.child(j)
+                if (
+                    tool_item
+                    and tool_item.data(0, Qt.ItemDataRole.UserRole) == tool_name
+                ):
+                    return tool_item
+        return None
+
+    def _set_selected_tool(self, tool_name):
+        if not tool_name:
+            return False
+
+        self.selected_tool = tool_name
+
+        tool = self.manager.get_tool(tool_name)
+        self.selected_tool_api = tool.get("tool_api", "") if tool else ""
+
+        print(f"[BERATools] Selected tool: {tool_name} (api: {self.selected_tool_api})")
+        self._load_tool_parameters(tool_name)
+        self.tool_selected.emit(tool_name)
+        return True
+
+    def select_tool_by_name(self, tool_name):
+        """Select tool in tree and load its parameter widgets."""
+        item = self._find_tool_item_by_name(tool_name)
+        if item is None:
+            return False
+
+        self.tool_tree.setCurrentItem(item)
+        return self._set_selected_tool(tool_name)
+
+    def apply_tool_parameters(self, params):
+        """Apply parameter values to current tool widgets."""
+        if not isinstance(params, dict):
+            return
+
+        for variable, value in params.items():
+            widget = self.param_widgets.get(variable)
+            if widget is None:
+                continue
+            try:
+                widget.set_value(value)
+            except Exception as e:
+                print(f"[BERATools] Failed to restore '{variable}': {e}")
+
+        self._update_dependency_states()
+
+    def _history_rows(self):
+        history = self.history_store.get_tool_history()
+        rows = []
+        self.history_api_keys = list(history.keys())
+
+        for tool_api in self.history_api_keys:
+            display_name = self._get_tool_name_from_api(tool_api)
+            if not display_name:
+                display_name = f"[Missing] {tool_api}"
+            rows.append(display_name)
+
+        return rows
+
+    def refresh_history_panel(self):
+        self.history_updated.emit(self._history_rows())
+
+    def remove_history_row(self, index):
+        self.history_store.remove_tool_history_item(index)
+        self.refresh_history_panel()
+
+    def clear_history(self):
+        self.history_store.remove_tool_history_all()
+        self.refresh_history_panel()
+
+    def _load_history_state(self):
+        self.refresh_history_panel()
+
+        recent_tool = self.history_store.get_recent_tool()
+        if recent_tool:
+            if self.select_tool_by_name(recent_tool):
+                history = self.history_store.get_tool_history()
+                if self.selected_tool_api and self.selected_tool_api in history:
+                    self.apply_tool_parameters(history.get(self.selected_tool_api, {}))
+
+    @Slot(int)
+    def _on_history_tool_selected(self, index):
+        history = self.history_store.get_tool_history()
+        keys = list(history.keys())
+        if index < 0 or index >= len(keys):
+            return
+
+        tool_api = keys[index]
+        tool_name = self._get_tool_name_from_api(tool_api)
+        if not tool_name:
+            self.status_message.emit(f"Tool not available in metadata: {tool_api}")
+            return
+
+        if not self.select_tool_by_name(tool_name):
+            self.status_message.emit(f"Could not select tool: {tool_name}")
+            return
+
+        params = history.get(tool_api, {})
+        self.apply_tool_parameters(params)
+        self.status_message.emit(f"Loaded parameters from history: {tool_name}")
+
     def _populate_tool_tree(self):
         """Populate tree widget from metadata."""
         self.tool_tree.clear()
@@ -280,22 +415,7 @@ class BERAToolsPanel(QDockWidget):
         tool_name = item.data(0, Qt.ItemDataRole.UserRole)
 
         if tool_name:
-            self.selected_tool = tool_name
-
-            # Get tool_api from metadata
-            tool = self.manager.get_tool(tool_name)
-            if tool:
-                self.selected_tool_api = tool.get("tool_api", "")
-
-            print(
-                f"[BERATools] Selected tool: {tool_name} (api: {self.selected_tool_api})"
-            )
-
-            # Load and display parameters
-            self._load_tool_parameters(tool_name)
-
-            # Emit signal
-            self.tool_selected.emit(tool_name)
+            self._set_selected_tool(tool_name)
 
     def _load_tool_parameters(self, tool_name):
         """
@@ -501,6 +621,12 @@ class BERAToolsPanel(QDockWidget):
         self.status_message.emit(f"Running {self.selected_tool}...")
         print(f"[BERATools] Running tool: {self.selected_tool}")
         print(f"[BERATools] Parameters: {params}")
+
+        # Save tool history in shared BERATools format
+        if self.selected_tool_api:
+            self.history_store.add_tool_history(self.selected_tool_api, params)
+            self.history_store.save_recent_tool(self.selected_tool)
+            self.refresh_history_panel()
 
         # Start subprocess
         self._start_process()
@@ -765,6 +891,73 @@ class BERAToolsPanel(QDockWidget):
         # Re-enable Run button
         self.run_btn.setEnabled(True)
         self.stop_btn.setEnabled(False)
+
+
+class ToolHistoryPanel(QDockWidget):
+    """Dock panel that displays BERATools recent tool history."""
+
+    tool_selected = Signal(int)  # row index in history list
+    delete_requested = Signal(int)  # row index in history list
+    clear_requested = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__("Tool History", parent)
+
+        main_widget = QWidget()
+        layout = QVBoxLayout()
+        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setSpacing(5)
+
+        button_layout = QHBoxLayout()
+        self.delete_btn = QPushButton("Delete")
+        self.delete_btn.setMaximumWidth(80)
+        self.delete_btn.clicked.connect(self._on_delete_clicked)
+        button_layout.addWidget(self.delete_btn)
+
+        self.clear_btn = QPushButton("Clear")
+        self.clear_btn.setMaximumWidth(80)
+        self.clear_btn.clicked.connect(self._on_clear_clicked)
+        button_layout.addWidget(self.clear_btn)
+
+        button_layout.addStretch()
+        layout.addLayout(button_layout)
+
+        self.history_list = QListWidget()
+        self.history_list.itemSelectionChanged.connect(self._on_selection_changed)
+        layout.addWidget(self.history_list)
+
+        main_widget.setLayout(layout)
+        self.setWidget(main_widget)
+
+        self.setObjectName("ToolHistoryPanel")
+        self.setMinimumWidth(300)
+        self.setMinimumHeight(200)
+
+    @Slot(object)
+    def set_history(self, rows):
+        self.history_list.clear()
+        if not rows:
+            return
+
+        for row in rows:
+            self.history_list.addItem(QListWidgetItem(str(row)))
+
+    def _selected_row(self):
+        row = self.history_list.currentRow()
+        return row if row >= 0 else -1
+
+    def _on_selection_changed(self):
+        row = self._selected_row()
+        if row >= 0:
+            self.tool_selected.emit(row)
+
+    def _on_delete_clicked(self):
+        row = self._selected_row()
+        if row >= 0:
+            self.delete_requested.emit(row)
+
+    def _on_clear_clicked(self):
+        self.clear_requested.emit()
 
 
 class LogPanel(QDockWidget):

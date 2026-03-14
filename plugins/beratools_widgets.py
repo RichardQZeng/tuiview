@@ -353,13 +353,6 @@ class FileParameterWidget(ParameterWidget):
         self.file_input.textChanged.connect(self._on_path_changed)
         layout.addWidget(self.file_input)
 
-        if not self.output:
-            self.autofill_btn = QPushButton("Auto")
-            self.autofill_btn.setMaximumWidth(40)
-            self.autofill_btn.clicked.connect(self._on_autofill_clicked)
-            self.autofill_btn.setToolTip("Fill from active TuiView layer")
-            layout.addWidget(self.autofill_btn)
-
         self.browse_btn = QPushButton("...")
         self.browse_btn.setMaximumWidth(40)
         self.browse_btn.clicked.connect(self._on_browse_clicked)
@@ -388,27 +381,6 @@ class FileParameterWidget(ParameterWidget):
     def _on_layer_changed(self, _index):
         self.selected_layer = self._current_layer_name()
         self.emit_value_changed()
-
-    def _on_autofill_clicked(self):
-        """Auto-fill path from TuiView's active layer."""
-        try:
-            from PySide6.QtGui import QGuiApplication
-
-            app = QGuiApplication.instance()
-
-            viewer = app.property("viewerwindow") if app is not None else None
-            if viewer is not None:
-                if hasattr(viewer, "viewwidget") and hasattr(
-                    viewer.viewwidget, "layers"
-                ):
-                    current_layer = viewer.viewwidget.layers.getCurrentLayer()
-                    if current_layer and hasattr(current_layer, "filename"):
-                        self.set_value(current_layer.filename)
-                        return
-
-            print("[BERATools] Could not find active layer in TuiView")
-        except Exception as e:
-            print(f"[BERATools] Auto-fill error: {e}")
 
     def _on_browse_clicked(self):
         """Open file dialog."""

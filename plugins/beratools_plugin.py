@@ -11,14 +11,15 @@ print("[DEBUG] beratools_plugin.py imported")
 
 # Import dock panel classes
 try:
-    from .beratools_panel import BERAToolsPanel, LogPanel
+    from .beratools_panel import BERAToolsPanel, LogPanel, ToolHistoryPanel
 except ImportError:
     try:
-        from beratools_panel import BERAToolsPanel, LogPanel
+        from beratools_panel import BERAToolsPanel, LogPanel, ToolHistoryPanel
     except ImportError as e:
         print(f"[BERATools] Error importing panel classes: {e}")
         BERAToolsPanel = None
         LogPanel = None
+        ToolHistoryPanel = None
 
 # ============================================
 # Required TuiView Plugin Interface Functions
@@ -86,6 +87,7 @@ def _on_viewer_created(viewer_window):
 
         # Add panels to viewer window
         viewer_window.addDockWidget(Qt.LeftDockWidgetArea, beratools_panel)
+        viewer_window.addDockWidget(Qt.BottomDockWidgetArea, history_panel)
         viewer_window.addDockWidget(Qt.BottomDockWidgetArea, log_panel)
 
         # Make panels visible by default
@@ -101,7 +103,7 @@ def _on_viewer_created(viewer_window):
         beratools_panel.progress_updated.connect(log_panel.set_progress)
 
         # Store references globally for later access
-        global _beratools_panel, _log_panel
+        global _beratools_panel, _log_panel, _history_panel
         _beratools_panel = beratools_panel
         _log_panel = log_panel
 
@@ -145,13 +147,16 @@ def _add_menu_action(viewer_window):
 
         def show_panels():
             """Shows and raises the BERATools panels."""
-            global _beratools_panel, _log_panel
+            global _beratools_panel, _log_panel, _history_panel
             if _beratools_panel:
                 _beratools_panel.show()
                 _beratools_panel.raise_()
             if _log_panel:
                 _log_panel.show()
                 _log_panel.raise_()
+            if _history_panel:
+                _history_panel.show()
+                _history_panel.raise_()
 
         action = QAction("Show BERATools Panels", viewer_window)
         action.triggered.connect(show_panels)
