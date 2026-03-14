@@ -9,6 +9,11 @@ from PySide6.QtCore import Qt, QTimer
 
 print("[DEBUG] beratools_plugin.py imported")
 
+_viewer_window_ref = None
+_beratools_panel = None
+_log_panel = None
+_history_panel = None
+
 # Import dock panel classes
 try:
     from .beratools_panel import BERAToolsPanel, LogPanel, ToolHistoryPanel
@@ -72,7 +77,7 @@ def _on_viewer_created(viewer_window):
     """
     print("[BERATools] ViewerWindow created, initializing plugin...")
 
-    if BERAToolsPanel is None or LogPanel is None:
+    if BERAToolsPanel is None or LogPanel is None or ToolHistoryPanel is None:
         print("[BERATools] ERROR: Panel classes not loaded, cannot initialize")
         return
 
@@ -83,28 +88,56 @@ def _on_viewer_created(viewer_window):
     # Create dock panels
     try:
         beratools_panel = BERAToolsPanel(viewer_window)
+        history_panel = ToolHistoryPanel(viewer_window)
         log_panel = LogPanel(viewer_window)
 
         # Add panels to viewer window
         viewer_window.addDockWidget(Qt.LeftDockWidgetArea, beratools_panel)
         viewer_window.addDockWidget(Qt.BottomDockWidgetArea, history_panel)
         viewer_window.addDockWidget(Qt.BottomDockWidgetArea, log_panel)
+        viewer_window.splitDockWidget(history_panel, log_panel, Qt.Horizontal)
 
         # Make panels visible by default
         beratools_panel.show()
+        history_panel.show()
         log_panel.show()
 
         # Ensure panels are visible after layout updates
         # Use QTimer to defer visibility confirmation
-        QTimer.singleShot(500, lambda: (beratools_panel.show(), log_panel.show()))
+        def _show_and_layout_panels():
+            if history_panel.property("_initial_layout_done"):
+                return
+            beratools_panel.show()
+            history_panel.show()
+            log_panel.show()
+            target_width = max(
+                beratools_panel.width(),
+                beratools_panel.sizeHint().width(),
+                history_panel.minimumWidth(),
+            )
+            total_width = max(viewer_window.width(), target_width + 1)
+            viewer_window.resizeDocks(
+                [history_panel, log_panel],
+                [target_width, total_width - target_width],
+                Qt.Horizontal,
+            )
+            history_panel.setProperty("_initial_layout_done", True)
+
+        QTimer.singleShot(500, _show_and_layout_panels)
 
         # Connect signals between panels
         beratools_panel.output_received.connect(log_panel.append_log)
         beratools_panel.progress_updated.connect(log_panel.set_progress)
+        beratools_panel.history_updated.connect(history_panel.set_history)
+        history_panel.tool_selected.connect(beratools_panel._on_history_tool_selected)
+        history_panel.delete_requested.connect(beratools_panel.remove_history_row)
+        history_panel.clear_requested.connect(beratools_panel.clear_history)
+        beratools_panel.refresh_history_panel()
 
         # Store references globally for later access
         global _beratools_panel, _log_panel, _history_panel
         _beratools_panel = beratools_panel
+        _history_panel = history_panel
         _log_panel = log_panel
 
         print("[BERATools] Dock panels created and added")
